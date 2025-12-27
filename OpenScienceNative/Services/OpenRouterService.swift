@@ -150,6 +150,7 @@ final class OpenRouterService {
   ///
   /// - PRIVACY: API key is consumed only to construct an `Authorization` header (RAM-only).
   /// - STATELESSNESS: `isContextFree` controls whether history is included in the `messages` payload.
+  /// - MULTIMODAL: Supports image attachments via base64 data URLs.
   func sendMessage(
     apiKey: SecureBytes,
     model: String,
@@ -157,6 +158,7 @@ final class OpenRouterService {
     isContextFree: Bool,
     history: [Message],
     currentUserContent: String,
+    currentAttachments: [Attachment] = [],
     temperature: Double,
     topP: Double,
     frequencyPenalty: Double,
@@ -176,45 +178,21 @@ final class OpenRouterService {
       throw OpenRouterServiceError.invalidAPIKey
     }
 
-    let trimmedSystem = systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let systemMessage: Message? = {
-      guard let trimmedSystem, !trimmedSystem.isEmpty else { return nil }
-      // NULL-HYPOTHESIS: only include system prompt if user explicitly provided it.
-      return Message(role: .system, content: trimmedSystem)
-    }()
-
-    let currentMessage = Message(role: .user, content: currentUserContent)
-
-    var payloadMessages: [Message] = []
-    if let systemMessage {
-      payloadMessages.append(systemMessage)
-    }
-
-    // SCIENTIFIC PROTOCOL (CRUCIAL):
-    // If Context Free is ON, the model receives ONLY the current user message (no history).
-    if isContextFree {
-      payloadMessages.append(currentMessage)
-    } else {
-      payloadMessages.append(contentsOf: history)
-      payloadMessages.append(currentMessage)
-    }
-
-    let reasoning: Reasoning? = {
-      guard reasoningEnabled else { return nil }
-      let effort = reasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
-      return Reasoning(enabled: true, effort: effort.isEmpty ? nil : effort, exclude: false)
-    }()
-
-    let body = ChatCompletionRequest(
+    // Build the request body with multimodal support
+    let requestBody = buildMultimodalRequestBody(
       model: model,
-      messages: payloadMessages,
+      systemPrompt: systemPrompt,
+      isContextFree: isContextFree,
+      history: history,
+      currentUserContent: currentUserContent,
+      currentAttachments: currentAttachments,
       temperature: temperature,
-      top_p: topP,
-      frequency_penalty: frequencyPenalty,
-      presence_penalty: presencePenalty,
-      max_tokens: maxTokens,
-      stream: true,
-      reasoning: reasoning
+      topP: topP,
+      frequencyPenalty: frequencyPenalty,
+      presencePenalty: presencePenalty,
+      reasoningEnabled: reasoningEnabled,
+      reasoningEffort: reasoningEffort,
+      maxTokens: maxTokens
     )
 
     var request = URLRequest(url: baseURL.appendingPathComponent("chat/completions"))
@@ -224,7 +202,7 @@ final class OpenRouterService {
     request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-    request.httpBody = try JSONEncoder().encode(body)
+    request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
 
     let (bytes, response) = try await session.bytes(for: request)
     guard let http = response as? HTTPURLResponse else {
@@ -259,6 +237,80 @@ final class OpenRouterService {
       guard let delta = chunk.choices?.first?.delta?.content, !delta.isEmpty else { continue }
       onAssistantDelta(delta)
     }
+  }
+
+  // MARK: - Multimodal Request Builder
+
+  /// Builds a request body dictionary that supports multimodal content.
+  /// - Note: Uses dictionary-based encoding to handle mixed content types (text + images).
+  private func buildMultimodalRequestBody(
+    model: String,
+    systemPrompt: String?,
+    isContextFree: Bool,
+    history: [Message],
+    currentUserContent: String,
+    currentAttachments: [Attachment],
+    temperature: Double,
+    topP: Double,
+    frequencyPenalty: Double,
+    presencePenalty: Double,
+    reasoningEnabled: Bool,
+    reasoningEffort: String,
+    maxTokens: Int?
+  ) -> [String: Any] {
+    var messages: [[String: Any]] = []
+
+    // Add system message if provided
+    let trimmedSystem = systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let trimmedSystem, !trimmedSystem.isEmpty {
+      messages.append([
+        "role": "system",
+        "content": trimmedSystem,
+      ])
+    }
+
+    // Add history messages (if not context-free)
+    if !isContextFree {
+      for msg in history {
+        messages.append(msg.toAPIPayload())
+      }
+    }
+
+    // Add current user message with attachments
+    let currentMessage = Message(
+      role: .user,
+      content: currentUserContent,
+      attachments: currentAttachments
+    )
+    messages.append(currentMessage.toAPIPayload())
+
+    // Build request body
+    var body: [String: Any] = [
+      "model": model,
+      "messages": messages,
+      "temperature": temperature,
+      "top_p": topP,
+      "frequency_penalty": frequencyPenalty,
+      "presence_penalty": presencePenalty,
+      "stream": true,
+    ]
+
+    if let maxTokens {
+      body["max_tokens"] = maxTokens
+    }
+
+    // Add reasoning parameters if enabled
+    if reasoningEnabled {
+      var reasoning: [String: Any] = ["enabled": true]
+      let effort = reasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !effort.isEmpty {
+        reasoning["effort"] = effort
+      }
+      reasoning["exclude"] = false
+      body["reasoning"] = reasoning
+    }
+
+    return body
   }
 }
 

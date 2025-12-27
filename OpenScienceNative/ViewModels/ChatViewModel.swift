@@ -67,8 +67,16 @@ final class ChatViewModel: ObservableObject {
   @Published var isSending: Bool = false
   @Published var isInspectorPresented: Bool = true
 
+  /// Current attachments pending send (images/files).
+  @Published var pendingAttachments: [Attachment] = []
+
   var settings = LabSettings()
   let apiKey = SecureBytes()
+
+  /// Models sorted with newest first (reversed order).
+  var sortedModels: [OpenRouterModel] {
+    models.reversed()
+  }
 
   private let service = OpenRouterService()
   private var streamingTask: Task<Void, Never>?
@@ -129,6 +137,40 @@ final class ChatViewModel: ObservableObject {
     isSending = false
   }
 
+  // MARK: - Attachment Management
+
+  /// Adds an attachment from a file URL.
+  func addAttachment(from url: URL) {
+    guard let attachment = Attachment.fromURL(url) else {
+      rawErrorBody = "Failed to read file: \(url.lastPathComponent)"
+      return
+    }
+
+    // SECURITY: Limit attachment size (20MB per file)
+    guard attachment.size <= 20_000_000 else {
+      rawErrorBody = "File too large: \(attachment.filename) (\(attachment.formattedSize)). Maximum is 20MB."
+      return
+    }
+
+    // SECURITY: Limit total attachments
+    guard pendingAttachments.count < 10 else {
+      rawErrorBody = "Maximum 10 attachments allowed."
+      return
+    }
+
+    pendingAttachments.append(attachment)
+  }
+
+  /// Removes an attachment by ID.
+  func removeAttachment(_ id: UUID) {
+    pendingAttachments.removeAll { $0.id == id }
+  }
+
+  /// Clears all pending attachments.
+  func clearAttachments() {
+    pendingAttachments.removeAll()
+  }
+
   func refreshModels() {
     // Prefer env var (e.g. exported from ~/.zshrc) when available.
     bootstrapFromEnvironmentIfAvailable()
@@ -183,8 +225,12 @@ final class ChatViewModel: ObservableObject {
       history = Array(history.suffix(SecurityLimits.maxHistoryMessages))
     }
 
+    // Capture attachments before clearing
+    let attachments = pendingAttachments
+
     inputText = ""
-    messages.append(Message(role: .user, content: prompt))
+    pendingAttachments.removeAll()
+    messages.append(Message(role: .user, content: prompt, attachments: attachments))
 
     let assistantID = UUID()
     messages.append(Message(id: assistantID, role: .assistant, content: ""))
@@ -202,6 +248,7 @@ final class ChatViewModel: ObservableObject {
           isContextFree: self.settings.isContextFree,
           history: history,
           currentUserContent: prompt,
+          currentAttachments: attachments,
           temperature: self.settings.temperature,
           topP: self.settings.topP,
           frequencyPenalty: self.settings.frequencyPenalty,
@@ -270,6 +317,7 @@ final class ChatViewModel: ObservableObject {
     rawJSONTranscript.removeAll(keepingCapacity: false)
     rawErrorBody.removeAll(keepingCapacity: false)
     models.removeAll(keepingCapacity: false)
+    pendingAttachments.removeAll(keepingCapacity: false)
 
     apiKey.wipe() // PRIVACY: zeroize key bytes
 

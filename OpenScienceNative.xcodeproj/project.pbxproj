@@ -20,6 +20,7 @@
 		A1B2C3D4E5F60718293A4B8A /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B75 /* MessageBubbleView.swift */; };
 		A1B2C3D4E5F60718293A4B8B /* StarfieldBackgroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B76 /* StarfieldBackgroundView.swift */; };
 		A1B2C3D4E5F60718293A4B8C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B77 /* Assets.xcassets */; };
+		A1B2C3D4E5F60718293A4B8E /* Attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B8D /* Attachment.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,7 @@
 		A1B2C3D4E5F60718293A4B77 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B78 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B79 /* OpenScienceNative.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenScienceNative.entitlements; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B8D /* Attachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attachment.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,6 +89,7 @@
 		A1B2C3D4E5F60718293A4B7A /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F60718293A4B8D /* Attachment.swift */,
 				A1B2C3D4E5F60718293A4B6D /* Message.swift */,
 				A1B2C3D4E5F60718293A4B6E /* ChatCompletionModels.swift */,
 				A1B2C3D4E5F60718293A4B6F /* OpenRouterModel.swift */,
@@ -205,6 +208,7 @@
 			files = (
 				A1B2C3D4E5F60718293A4B80 /* OpenScienceNativeApp.swift in Sources */,
 				A1B2C3D4E5F60718293A4B81 /* AppDelegate.swift in Sources */,
+				A1B2C3D4E5F60718293A4B8E /* Attachment.swift in Sources */,
 				A1B2C3D4E5F60718293A4B82 /* Message.swift in Sources */,
 				A1B2C3D4E5F60718293A4B83 /* ChatCompletionModels.swift in Sources */,
 				A1B2C3D4E5F60718293A4B84 /* OpenRouterModel.swift in Sources */,
@@ -331,5 +335,6 @@
 	};
 	rootObject = A1B2C3D4E5F60718293A4B5C /* Project object */;
 }
+
 
 

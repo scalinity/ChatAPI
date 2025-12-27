@@ -167,8 +167,10 @@ struct LabSettingsView: View {
 
   private var filteredModels: [OpenRouterModel] {
     let q = modelQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !q.isEmpty else { return chat.models }
-    return chat.models.filter { $0.id.localizedCaseInsensitiveContains(q) || ($0.name?.localizedCaseInsensitiveContains(q) ?? false) }
+    // Use sortedModels (reversed) so newest models appear first
+    let source = chat.sortedModels
+    guard !q.isEmpty else { return source }
+    return source.filter { $0.id.localizedCaseInsensitiveContains(q) || ($0.name?.localizedCaseInsensitiveContains(q) ?? false) }
   }
 }
 
