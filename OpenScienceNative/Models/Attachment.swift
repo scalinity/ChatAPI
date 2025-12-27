@@ -30,6 +30,12 @@ struct Attachment: Identifiable, Hashable {
   /// - Parameter url: The file URL to read from.
   /// - Returns: An attachment, or nil if the file couldn't be read.
   static func fromURL(_ url: URL) -> Attachment? {
+    // Sandbox-friendly: drag & drop/open panel can provide security-scoped URLs.
+    guard url.isFileURL else { return nil }
+    let didAccess = url.startAccessingSecurityScopedResource()
+    defer {
+      if didAccess { url.stopAccessingSecurityScopedResource() }
+    }
     guard let data = try? Data(contentsOf: url) else { return nil }
 
     let filename = url.lastPathComponent

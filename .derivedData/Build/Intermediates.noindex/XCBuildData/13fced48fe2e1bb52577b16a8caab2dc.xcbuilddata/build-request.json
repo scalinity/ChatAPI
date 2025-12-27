@@ -1,0 +1,65 @@
+{
+  "buildCommand" : {
+    "command" : "build",
+    "skipDependencies" : false,
+    "style" : "buildOnly"
+  },
+  "configuredTargets" : [
+    {
+      "guid" : "fa94bf15bda87739bdd8d82a77e8e0f8f4487d34a3f2f7dd746d8255be562fc0"
+    }
+  ],
+  "containerPath" : "/Users/danny/Documents/Codez/Apps/ChatAPI/OpenScienceNative.xcodeproj",
+  "continueBuildingAfterErrors" : false,
+  "dependencyScope" : "workspace",
+  "enableIndexBuildArena" : false,
+  "hideShellScriptEnvironment" : false,
+  "parameters" : {
+    "action" : "build",
+    "activeArchitecture" : "arm64",
+    "activeRunDestination" : {
+      "disableOnlyActiveArch" : false,
+      "platform" : "macosx",
+      "sdk" : "macosx26.1",
+      "sdkVariant" : "macos",
+      "supportedArchitectures" : [
+        "arm64e",
+        "arm64",
+        "x86_64"
+      ],
+      "targetArchitecture" : "arm64"
+    },
+    "arenaInfo" : {
+      "buildIntermediatesPath" : "/Users/danny/Documents/Codez/Apps/ChatAPI/.derivedData/Build/Intermediates.noindex",
+      "buildProductsPath" : "/Users/danny/Documents/Codez/Apps/ChatAPI/.derivedData/Build/Products",
+      "derivedDataPath" : "/Users/danny/Documents/Codez/Apps/ChatAPI/.derivedData",
+      "indexDataStoreFolderPath" : "/Users/danny/Documents/Codez/Apps/ChatAPI/.derivedData/Index.noindex/DataStore",
+      "indexEnableDataStore" : true,
+      "indexPCHPath" : "/Users/danny/Documents/Codez/Apps/ChatAPI/.derivedData/Index.noindex/PrecompiledHeaders",
+      "pchPath" : "/Users/danny/Documents/Codez/Apps/ChatAPI/.derivedData/Build/Intermediates.noindex/PrecompiledHeaders"
+    },
+    "configurationName" : "Debug",
+    "overrides" : {
+      "commandLine" : {
+        "table" : {
+          "CODE_SIGNING_ALLOWED" : "NO",
+          "SDKROOT" : "macosx26.1"
+        }
+      },
+      "synthesized" : {
+        "table" : {
+          "ACTION" : "build",
+          "ENABLE_PREVIEWS" : "NO",
+          "ENABLE_XOJIT_PREVIEWS" : "YES",
+          "ONLY_ACTIVE_ARCH" : "YES"
+        }
+      }
+    }
+  },
+  "schemeCommand" : "launch",
+  "showNonLoggedProgress" : true,
+  "useDryRun" : false,
+  "useImplicitDependencies" : true,
+  "useLegacyBuildLocations" : false,
+  "useParallelTargets" : true
+}

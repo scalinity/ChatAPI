@@ -70,6 +70,9 @@ final class ChatViewModel: ObservableObject {
   /// Current attachments pending send (images/files).
   @Published var pendingAttachments: [Attachment] = []
 
+  /// MCP connectors (Model Context Protocol) for agent/tool workflows (RAM-only).
+  @Published var mcpConnectors: [MCPConnector] = []
+
   var settings = LabSettings()
   let apiKey = SecureBytes()
 
@@ -81,6 +84,7 @@ final class ChatViewModel: ObservableObject {
   private let service = OpenRouterService()
   private var streamingTask: Task<Void, Never>?
   private var terminationObserver: Any?
+  private let mcpClient = MCPHTTPClient()
 
   init() {
     terminationObserver = NotificationCenter.default.addObserver(
@@ -137,6 +141,18 @@ final class ChatViewModel: ObservableObject {
     isSending = false
   }
 
+  /// Clears the current chat session while preserving persistent configuration
+  /// such as the API key (Keychain) and MCP connector list.
+  func resetSession() {
+    stop()
+    messages.removeAll(keepingCapacity: false)
+    inputText.removeAll(keepingCapacity: false)
+    systemPromptText.removeAll(keepingCapacity: false)
+    rawJSONTranscript.removeAll(keepingCapacity: false)
+    rawErrorBody.removeAll(keepingCapacity: false)
+    pendingAttachments.removeAll(keepingCapacity: false)
+  }
+
   // MARK: - Attachment Management
 
   /// Adds an attachment from a file URL.
@@ -145,6 +161,12 @@ final class ChatViewModel: ObservableObject {
       rawErrorBody = "Failed to read file: \(url.lastPathComponent)"
       return
     }
+    addAttachment(attachment)
+  }
+
+  /// Adds an already-materialized attachment (RAM-only), enforcing security limits.
+  func addAttachment(_ attachment: Attachment) {
+    rawErrorBody = ""
 
     // SECURITY: Limit attachment size (20MB per file)
     guard attachment.size <= 20_000_000 else {
@@ -171,6 +193,52 @@ final class ChatViewModel: ObservableObject {
     pendingAttachments.removeAll()
   }
 
+  // MARK: - MCP Connectors (HTTP JSON-RPC)
+
+  func addMCPConnector(name: String, endpoint: String) {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedName.isEmpty, let url = URL(string: trimmedEndpoint) else {
+      rawErrorBody = "Invalid connector name or URL."
+      return
+    }
+    guard url.scheme == "http" || url.scheme == "https" else {
+      rawErrorBody = "Connector URL must be http(s)."
+      return
+    }
+    mcpConnectors.append(MCPConnector(name: trimmedName, endpoint: trimmedEndpoint))
+  }
+
+  func removeMCPConnector(_ id: UUID) {
+    mcpConnectors.removeAll { $0.id == id }
+  }
+
+  func refreshMCPTools(for id: UUID) {
+    guard let idx = mcpConnectors.firstIndex(where: { $0.id == id }) else { return }
+    mcpConnectors[idx].status = .connecting
+    mcpConnectors[idx].lastError = nil
+    mcpConnectors[idx].lastRawResponse = nil
+
+    Task {
+      do {
+        let endpoint = mcpConnectors[idx].endpoint
+        let (tools, raw) = try await mcpClient.listTools(endpoint: endpoint)
+        await MainActor.run {
+          guard let idx2 = self.mcpConnectors.firstIndex(where: { $0.id == id }) else { return }
+          self.mcpConnectors[idx2].tools = tools
+          self.mcpConnectors[idx2].lastRawResponse = raw
+          self.mcpConnectors[idx2].status = .connected
+        }
+      } catch {
+        await MainActor.run {
+          guard let idx2 = self.mcpConnectors.firstIndex(where: { $0.id == id }) else { return }
+          self.mcpConnectors[idx2].status = .error
+          self.mcpConnectors[idx2].lastError = error.localizedDescription
+        }
+      }
+    }
+  }
+
   func refreshModels() {
     // Prefer env var (e.g. exported from ~/.zshrc) when available.
     bootstrapFromEnvironmentIfAvailable()
@@ -192,13 +260,16 @@ final class ChatViewModel: ObservableObject {
     // Prefer env var (e.g. exported from ~/.zshrc) when available.
     bootstrapFromEnvironmentIfAvailable()
     let prompt = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !prompt.isEmpty else { return }
+    let attachments = pendingAttachments
+    guard !prompt.isEmpty || !attachments.isEmpty else { return }
 
-    // SECURITY: Validate user input before processing
-    let (isValid, validationError) = validateUserInput(prompt)
-    guard isValid else {
-      rawErrorBody = validationError ?? "Invalid input."
-      return
+    if !prompt.isEmpty {
+      // SECURITY: Validate user input before processing
+      let (isValid, validationError) = validateUserInput(prompt)
+      guard isValid else {
+        rawErrorBody = validationError ?? "Invalid input."
+        return
+      }
     }
 
     // SECURITY: Validate system prompt if present
@@ -224,9 +295,6 @@ final class ChatViewModel: ObservableObject {
     if history.count > SecurityLimits.maxHistoryMessages {
       history = Array(history.suffix(SecurityLimits.maxHistoryMessages))
     }
-
-    // Capture attachments before clearing
-    let attachments = pendingAttachments
 
     inputText = ""
     pendingAttachments.removeAll()
@@ -318,6 +386,7 @@ final class ChatViewModel: ObservableObject {
     rawErrorBody.removeAll(keepingCapacity: false)
     models.removeAll(keepingCapacity: false)
     pendingAttachments.removeAll(keepingCapacity: false)
+    mcpConnectors.removeAll(keepingCapacity: false)
 
     apiKey.wipe() // PRIVACY: zeroize key bytes
 
@@ -330,6 +399,123 @@ final class ChatViewModel: ObservableObject {
     settings.reasoningEnabled = true
     settings.reasoningEffort = "xhigh"
     selectedModelID = "openai/o3"
+  }
+}
+
+// MARK: - MCP Models (RAM-only)
+
+struct MCPTool: Identifiable, Hashable {
+  let id: String
+  var name: String { id }
+  var description: String?
+  var inputSchemaJSON: String?
+}
+
+struct MCPConnector: Identifiable, Hashable {
+  enum Status: String, Hashable {
+    case disconnected
+    case connecting
+    case connected
+    case error
+  }
+
+  let id: UUID
+  var name: String
+  var endpoint: String
+  var status: Status
+  var tools: [MCPTool]
+  var lastError: String?
+  var lastRawResponse: String?
+
+  init(
+    id: UUID = UUID(),
+    name: String,
+    endpoint: String,
+    status: Status = .disconnected,
+    tools: [MCPTool] = [],
+    lastError: String? = nil,
+    lastRawResponse: String? = nil
+  ) {
+    self.id = id
+    self.name = name
+    self.endpoint = endpoint
+    self.status = status
+    self.tools = tools
+    self.lastError = lastError
+    self.lastRawResponse = lastRawResponse
+  }
+}
+
+// MARK: - MCP JSON-RPC over HTTP (minimal, no deps)
+
+private struct MCPHTTPClient {
+  private let session: URLSession
+
+  init() {
+    let config = URLSessionConfiguration.ephemeral
+    config.urlCache = nil
+    config.requestCachePolicy = .reloadIgnoringLocalCacheData
+    config.httpCookieStorage = nil
+    config.httpShouldSetCookies = false
+    config.httpCookieAcceptPolicy = .never
+    self.session = URLSession(configuration: config)
+  }
+
+  func listTools(endpoint: String) async throws -> ([MCPTool], String) {
+    guard let url = URL(string: endpoint) else {
+      throw URLError(.badURL)
+    }
+
+    let body: [String: Any] = [
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/list",
+      "params": [:],
+    ]
+    let data = try JSONSerialization.data(withJSONObject: body, options: [])
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.cachePolicy = .reloadIgnoringLocalCacheData
+    request.timeoutInterval = 20
+    request.httpBody = data
+
+    let (respData, response) = try await session.data(for: request)
+    guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+    guard (200..<300).contains(http.statusCode) else {
+      let raw = String(data: respData, encoding: .utf8) ?? ""
+      throw OpenRouterServiceError.httpError(statusCode: http.statusCode, body: raw)
+    }
+
+    let raw = String(data: respData, encoding: .utf8) ?? ""
+
+    // Best-effort parse: result.tools -> [{name, description, inputSchema}]
+    guard let json = try JSONSerialization.jsonObject(with: respData) as? [String: Any] else {
+      return ([], raw)
+    }
+    guard let result = json["result"] as? [String: Any] else {
+      return ([], raw)
+    }
+    guard let toolsArr = result["tools"] as? [[String: Any]] else {
+      return ([], raw)
+    }
+
+    let tools: [MCPTool] = toolsArr.compactMap { dict in
+      guard let name = dict["name"] as? String, !name.isEmpty else { return nil }
+      let desc = dict["description"] as? String
+      let schemaObj = dict["inputSchema"] ?? dict["input_schema"]
+      let schemaJSON: String? = {
+        guard let schemaObj else { return nil }
+        guard JSONSerialization.isValidJSONObject(schemaObj),
+              let d = try? JSONSerialization.data(withJSONObject: schemaObj, options: [.prettyPrinted]),
+              let s = String(data: d, encoding: .utf8) else { return nil }
+        return s
+      }()
+      return MCPTool(id: name, description: desc, inputSchemaJSON: schemaJSON)
+    }
+
+    return (tools, raw)
   }
 }
 
