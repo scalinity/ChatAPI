@@ -63,13 +63,20 @@ struct LabSettingsView: View {
           }
           .disabled(apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
+          Button("Load") {
+            chat.loadAPIKeyFromKeychain()
+            chat.refreshModels()
+          }
+          .help("Load saved key from Keychain (may prompt for password)")
+          .disabled(!chat.apiKey.isEmpty)
+
           Button("Forget") {
             chat.forgetAPIKey()
           }
           .disabled(chat.apiKey.isEmpty)
         }
 
-        Text(chat.apiKey.isEmpty ? "Key not loaded" : "Key loaded")
+        Text(chat.apiKey.isEmpty ? "Key not loaded - click Load or enter key" : "Key loaded")
           .font(.system(size: 11))
           .foregroundStyle(chat.apiKey.isEmpty ? Color.secondary : Color.green)
       }

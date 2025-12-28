@@ -52,7 +52,7 @@ final class LabSettings: ObservableObject {
 
   // “Max reasoning” defaults (explicit, user-visible control)
   @Published var reasoningEnabled: Bool = true
-  @Published var reasoningEffort: String = "xhigh"
+  @Published var reasoningEffort: String = "high"
 }
 
 @MainActor

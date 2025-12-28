@@ -211,6 +211,20 @@ final class GrokVoiceService {
       return
     }
 
+    // Input audio transcription completed (user's speech transcribed)
+    if type == "conversation.item.input_audio_transcription.completed" {
+      if let transcript = json["transcript"] as? String {
+        onTextDelta("👤 You: \(transcript)\n")
+      }
+    }
+
+    // Response audio transcript delta (assistant's speech transcribed)
+    if type == "response.audio_transcript.delta" {
+      if let delta = json["delta"] as? String {
+        onTextDelta(delta)
+      }
+    }
+
     // Text deltas (various compatible event names)
     if type.hasSuffix("text.delta") || type.hasSuffix("transcript.delta") {
       if let delta = json["delta"] as? String {
@@ -218,9 +232,14 @@ final class GrokVoiceService {
       }
     }
 
-    // Audio deltas (base64 pcm)
+    // Audio deltas (base64 pcm) - response.audio.delta
     if type.hasSuffix("audio.delta") {
       if let b64 = json["delta"] as? String,
+         let pcm = Data(base64Encoded: b64) {
+        onAudioDeltaPCM24k16(pcm)
+      }
+      // Also check for nested audio field (xAI format)
+      if let b64 = json["audio"] as? String,
          let pcm = Data(base64Encoded: b64) {
         onAudioDeltaPCM24k16(pcm)
       }
