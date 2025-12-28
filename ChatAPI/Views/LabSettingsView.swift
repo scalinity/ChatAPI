@@ -95,14 +95,28 @@ struct LabSettingsView: View {
       Picker("Selected", selection: $chat.selectedModelID) {
         if chat.models.isEmpty {
           Text(chat.selectedModelID).tag(chat.selectedModelID)
+        } else if filteredGroupedModels.isEmpty {
+          // Show feedback when search has no matches
+          Text("No matches").tag(chat.selectedModelID)
         } else {
-          ForEach(filteredModels, id: \.id) { model in
-            Text(model.id).tag(model.id)
+          ForEach(filteredGroupedModels) { group in
+            Section(header: Text(group.displayName)) {
+              ForEach(group.models) { model in
+                Text(model.shortName).tag(model.id)
+              }
+            }
           }
         }
       }
       .labelsHidden()
       .pickerStyle(.menu)
+
+      // Show selected model info
+      if let selected = chat.selectedModel {
+        Text(selected.id)
+          .font(.system(size: 10, design: .monospaced))
+          .foregroundStyle(.tertiary)
+      }
 
       Button("Refresh Model List") {
         chat.refreshModels()
@@ -172,12 +186,32 @@ struct LabSettingsView: View {
     }
   }
 
-  private var filteredModels: [OpenRouterModel] {
+  /// Groups models by provider, filtered by search query.
+  /// Always includes the currently selected model to prevent orphaned selection.
+  private var filteredGroupedModels: [ModelCatalog.ProviderGroup] {
     let q = modelQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-    // Use sortedModels (reversed) so newest models appear first
-    let source = chat.sortedModels
-    guard !q.isEmpty else { return source }
-    return source.filter { $0.id.localizedCaseInsensitiveContains(q) || ($0.name?.localizedCaseInsensitiveContains(q) ?? false) }
+    let groups = chat.groupedModels
+    let selectedID = chat.selectedModelID
+
+    // No filter: return all groups
+    guard !q.isEmpty else { return groups }
+
+    // Filter models within each group, always keeping selected model
+    return groups.compactMap { group in
+      let filtered = group.models.filter { model in
+        // Always include currently selected model to prevent orphaned selection
+        model.id == selectedID ||
+        model.id.localizedCaseInsensitiveContains(q) ||
+        model.shortName.localizedCaseInsensitiveContains(q) ||
+        (model.name?.localizedCaseInsensitiveContains(q) ?? false)
+      }
+      guard !filtered.isEmpty else { return nil }
+      return ModelCatalog.ProviderGroup(
+        id: group.id,
+        displayName: group.displayName,
+        models: filtered
+      )
+    }
   }
 }
 

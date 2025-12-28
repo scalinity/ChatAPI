@@ -2,17 +2,62 @@ import SwiftUI
 
 struct MessageBubbleView: View {
   let message: Message
+  @State private var isReasoningExpanded: Bool = true  // Auto-expand by default
 
   var body: some View {
     HStack {
       if message.role == .assistant {
-        bubble
+        bubbleContent
         Spacer(minLength: 40)
       } else {
         Spacer(minLength: 40)
-        bubble
+        bubbleContent
       }
     }
+  }
+
+  @ViewBuilder
+  private var bubbleContent: some View {
+    VStack(alignment: message.role == .assistant ? .leading : .trailing, spacing: 8) {
+      // Reasoning stream (thinking process) - collapsible
+      if !message.reasoning_content.isEmpty {
+        DisclosureGroup(
+          isExpanded: $isReasoningExpanded,
+          content: {
+            Text(message.reasoning_content)
+              .textSelection(.enabled)
+              .font(.system(size: 13))
+              .foregroundStyle(.primary.opacity(0.7))
+              .padding(.top, 8)
+          },
+          label: {
+            HStack(spacing: 6) {
+              Image(systemName: "brain.head.profile")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+              Text("Thinking")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+              Spacer()
+            }
+          }
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(.black.opacity(0.25))
+            .overlay(
+              RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.white.opacity(0.06), lineWidth: 1)
+            )
+        )
+      }
+      
+      // Main content bubble
+      bubble
+    }
+    .frame(maxWidth: 720, alignment: message.role == .assistant ? .leading : .trailing)
   }
 
   private var bubble: some View {
@@ -29,7 +74,6 @@ struct MessageBubbleView: View {
               .stroke(.white.opacity(0.08), lineWidth: 1)
           )
       )
-      .frame(maxWidth: 720, alignment: message.role == .assistant ? .leading : .trailing)
   }
 
   private var renderedText: AttributedString {

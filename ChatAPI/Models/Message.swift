@@ -66,6 +66,10 @@ struct Message: Identifiable, Hashable {
   let id: UUID
   var role: MessageRole
   var content: String
+  
+  /// Reasoning/thinking stream from models like o1, o3, DeepSeek R1, etc.
+  /// Displayed separately in the UI with collapsible affordance.
+  var reasoning_content: String
 
   /// Local-only: attachments associated with this message (for UI display).
   var attachments: [Attachment]
@@ -75,10 +79,11 @@ struct Message: Identifiable, Hashable {
     attachments.contains { $0.isImage }
   }
 
-  init(id: UUID = UUID(), role: MessageRole, content: String, attachments: [Attachment] = []) {
+  init(id: UUID = UUID(), role: MessageRole, content: String, reasoning_content: String = "", attachments: [Attachment] = []) {
     self.id = id
     self.role = role
     self.content = content
+    self.reasoning_content = reasoning_content
     self.attachments = attachments
   }
 
@@ -88,6 +93,7 @@ struct Message: Identifiable, Hashable {
     lhs.id == rhs.id &&
     lhs.role == rhs.role &&
     lhs.content == rhs.content &&
+    lhs.reasoning_content == rhs.reasoning_content &&
     lhs.attachments == rhs.attachments
   }
 
@@ -97,6 +103,7 @@ struct Message: Identifiable, Hashable {
     hasher.combine(id)
     hasher.combine(role)
     hasher.combine(content)
+    hasher.combine(reasoning_content)
     hasher.combine(attachments)
   }
 }
@@ -223,6 +230,7 @@ extension Message: Codable {
     self.id = UUID()
     self.role = try container.decode(MessageRole.self, forKey: .role)
     self.attachments = []
+    self.reasoning_content = "" // Always empty for decoded messages (reasoning is runtime-only)
 
     // Handle both string content and array content (multimodal)
     if let textContent = try? container.decode(String.self, forKey: .content) {

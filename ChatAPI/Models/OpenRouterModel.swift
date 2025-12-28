@@ -64,6 +64,123 @@ struct OpenRouterModel: Codable, Identifiable, Hashable {
     let params = Set((supported_parameters ?? []).map { $0.lowercased() })
     return Capabilities(inputModalities: inMods, outputModalities: outMods, supportedParameters: params)
   }
+
+  /// Extracts provider from model ID (e.g., "openai" from "openai/gpt-4o").
+  var provider: String {
+    id.components(separatedBy: "/").first ?? id
+  }
+
+  /// Model name without provider prefix (e.g., "gpt-4o" from "openai/gpt-4o").
+  var shortName: String {
+    let parts = id.components(separatedBy: "/")
+    return parts.count > 1 ? parts.dropFirst().joined(separator: "/") : id
+  }
+}
+
+// MARK: - OpenRouter Model Ordering
+
+/// Shared comparator for sorting OpenRouter models (newest first, then by context length).
+enum OpenRouterModelComparator {
+  static func compareNewestFirst(_ a: OpenRouterModel, _ b: OpenRouterModel) -> Bool {
+    let ca = a.created ?? 0
+    let cb = b.created ?? 0
+    if ca != cb { return ca > cb }
+    let la = a.context_length ?? 0
+    let lb = b.context_length ?? 0
+    if la != lb { return la > lb }
+    return a.id < b.id
+  }
+}
+
+// MARK: - Model Catalog Grouping
+
+/// Groups models by provider with popularity-based ordering.
+struct ModelCatalog {
+  /// Provider group containing models sorted newest-first.
+  struct ProviderGroup: Identifiable {
+    let id: String // provider slug
+    let displayName: String
+    let models: [OpenRouterModel]
+  }
+
+  /// Provider popularity rankings based on OpenRouter usage.
+  /// Lower index = higher priority (appears first).
+  private static let providerPopularity: [String] = [
+    "openai",
+    "anthropic",
+    "google",
+    "meta-llama",
+    "mistralai",
+    "x-ai",
+    "deepseek",
+    "perplexity",
+    "cohere",
+    "microsoft",
+    "qwen",
+    "nvidia",
+    "amazon",
+    "inflection",
+    "nous",
+    "openchat",
+    "phind",
+    "pygmalionai",
+    "cognitivecomputations",
+    "nousresearch",
+  ]
+
+  /// Human-readable provider names.
+  private static let providerDisplayNames: [String: String] = [
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "google": "Google",
+    "meta-llama": "Meta",
+    "mistralai": "Mistral",
+    "x-ai": "xAI",
+    "deepseek": "DeepSeek",
+    "perplexity": "Perplexity",
+    "cohere": "Cohere",
+    "microsoft": "Microsoft",
+    "qwen": "Qwen",
+    "nvidia": "NVIDIA",
+    "amazon": "Amazon",
+    "inflection": "Inflection",
+    "nous": "Nous",
+    "openchat": "OpenChat",
+    "phind": "Phind",
+    "pygmalionai": "Pygmalion",
+    "cognitivecomputations": "Cognitive Computations",
+    "nousresearch": "Nous Research",
+  ]
+
+  /// Groups models by provider, sorted by popularity then alphabetically.
+  /// Within each group, models are sorted newest-first (by created timestamp).
+  static func groupByProvider(_ models: [OpenRouterModel]) -> [ProviderGroup] {
+    // Group models by provider
+    var grouped: [String: [OpenRouterModel]] = [:]
+    for model in models {
+      let provider = model.provider
+      grouped[provider, default: []].append(model)
+    }
+
+    // Sort models within each group: newest first (by created timestamp)
+    for (provider, providerModels) in grouped {
+      grouped[provider] = providerModels.sorted(by: OpenRouterModelComparator.compareNewestFirst)
+    }
+
+    // Sort providers: popularity order first, then alphabetical for unknowns
+    let sortedProviders = grouped.keys.sorted { a, b in
+      let aIdx = providerPopularity.firstIndex(of: a) ?? Int.max
+      let bIdx = providerPopularity.firstIndex(of: b) ?? Int.max
+      if aIdx != bIdx { return aIdx < bIdx }
+      return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+    }
+
+    return sortedProviders.compactMap { provider in
+      guard let models = grouped[provider], !models.isEmpty else { return nil }
+      let displayName = providerDisplayNames[provider] ?? provider.capitalized
+      return ProviderGroup(id: provider, displayName: displayName, models: models)
+    }
+  }
 }
 
 

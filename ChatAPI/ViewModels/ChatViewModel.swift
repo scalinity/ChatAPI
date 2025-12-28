@@ -79,9 +79,21 @@ final class ChatViewModel: ObservableObject {
   var settings = LabSettings()
   let apiKey = SecureBytes()
 
+  /// Cached grouped models (invalidated when models changes).
+  private var _groupedModelsCache: [ModelCatalog.ProviderGroup]?
+
   /// Models sorted with newest first (reversed order).
   var sortedModels: [OpenRouterModel] {
     models.reversed()
+  }
+
+  /// Models grouped by provider family, sorted by OpenRouter popularity.
+  /// Cached to avoid recalculation on every SwiftUI re-render.
+  var groupedModels: [ModelCatalog.ProviderGroup] {
+    if let cached = _groupedModelsCache { return cached }
+    let result = ModelCatalog.groupByProvider(models)
+    _groupedModelsCache = result
+    return result
   }
 
   var selectedModel: OpenRouterModel? {
@@ -121,7 +133,7 @@ final class ChatViewModel: ObservableObject {
 
   init() {
     terminationObserver = NotificationCenter.default.addObserver(
-      forName: .openScienceNativeWillTerminate,
+      forName: .chatAPIWillTerminate,
       object: nil,
       queue: nil
     ) { [weak self] _ in
@@ -284,6 +296,7 @@ final class ChatViewModel: ObservableObject {
       do {
         let fetched = try await service.fetchModels(apiKey: apiKey)
         self.models = fetched
+        self._groupedModelsCache = nil // Invalidate cache
         if !fetched.contains(where: { $0.id == self.selectedModelID }) {
           self.selectedModelID = Self.pickDefaultModelID(from: fetched) ?? self.selectedModelID
         }
@@ -363,8 +376,10 @@ final class ChatViewModel: ObservableObject {
           // Use official metadata: only send `reasoning` if the model supports it.
           reasoningEnabled: self.settings.reasoningEnabled && reasoningAllowed,
           reasoningEffort: self.settings.reasoningEffort,
-          onRawEvent: { raw in
-            Task { @MainActor in
+          onRawEvent: { [weak self] raw in
+            // Use immediate MainActor dispatch to avoid batching
+            DispatchQueue.main.async {
+              guard let self else { return }
               self.rawJSONTranscript.append(raw)
               self.rawJSONTranscript.append("\n")
               // SECURITY: Truncate to prevent memory exhaustion
@@ -373,9 +388,18 @@ final class ChatViewModel: ObservableObject {
               }
             }
           },
-          onAssistantDelta: { delta in
-            Task { @MainActor in
+          onAssistantDelta: { [weak self] delta in
+            // Immediate dispatch for smooth character-by-character streaming
+            DispatchQueue.main.async {
+              guard let self else { return }
               self.appendDelta(delta, toAssistantWithID: assistantID)
+            }
+          },
+          onReasoningDelta: { [weak self] reasoning in
+            // Immediate dispatch for smooth reasoning stream
+            DispatchQueue.main.async {
+              guard let self else { return }
+              self.appendReasoningDelta(reasoning, toAssistantWithID: assistantID)
             }
           }
         )
@@ -399,6 +423,11 @@ final class ChatViewModel: ObservableObject {
   private func appendDelta(_ delta: String, toAssistantWithID id: UUID) {
     guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
     messages[idx].content.append(delta)
+  }
+  
+  private func appendReasoningDelta(_ reasoning: String, toAssistantWithID id: UUID) {
+    guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+    messages[idx].reasoning_content.append(reasoning)
   }
 
   private static func pickDefaultModelID(from models: [OpenRouterModel]) -> String? {
@@ -429,6 +458,7 @@ final class ChatViewModel: ObservableObject {
     rawJSONTranscript.removeAll(keepingCapacity: false)
     rawErrorBody.removeAll(keepingCapacity: false)
     models.removeAll(keepingCapacity: false)
+    _groupedModelsCache = nil // Invalidate cache
     pendingAttachments.removeAll(keepingCapacity: false)
     mcpConnectors.removeAll(keepingCapacity: false)
 
@@ -441,7 +471,7 @@ final class ChatViewModel: ObservableObject {
     settings.frequencyPenalty = 0.0
     settings.presencePenalty = 0.0
     settings.reasoningEnabled = true
-    settings.reasoningEffort = "xhigh"
+    settings.reasoningEffort = "high"
     selectedModelID = "openai/o3"
   }
 }
@@ -563,19 +593,5 @@ private struct MCPHTTPClient {
   }
 }
 
-// MARK: - OpenRouter model ordering helpers
-
-/// Shared comparator for sorting OpenRouter models (newest first, then by context length).
-enum OpenRouterModelComparator {
-  static func compareNewestFirst(_ a: OpenRouterModel, _ b: OpenRouterModel) -> Bool {
-    let ca = a.created ?? 0
-    let cb = b.created ?? 0
-    if ca != cb { return ca > cb }
-    let la = a.context_length ?? 0
-    let lb = b.context_length ?? 0
-    if la != lb { return la > lb }
-    return a.id < b.id
-  }
-}
 
 

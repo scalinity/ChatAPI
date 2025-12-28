@@ -7,7 +7,8 @@ struct GrokVoiceAgentSheet: View {
   @State private var keyDraft: String = ""
   @State private var userText: String = ""
 
-  private let voices = ["Ara", "Rex", "Sal", "Eve", "Leo"]
+  // xAI Grok Voice API voices
+  private let voices = ["sal", "rex", "ara", "eve", "leo"]
 
   var body: some View {
     VStack(spacing: 0) {
@@ -123,6 +124,10 @@ struct GrokVoiceAgentSheet: View {
             .textFieldStyle(.roundedBorder)
             .font(.system(size: 12, design: .monospaced))
 
+          Toggle("Auto Turn Detection (Server VAD)", isOn: $vm.useServerVAD)
+            .font(.system(size: 12))
+            .help("When enabled, the server automatically detects when you stop speaking and responds. When disabled, you must click Stop to trigger a response.")
+          
           Text("Instructions")
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(.secondary)
@@ -149,14 +154,33 @@ struct GrokVoiceAgentSheet: View {
             vm.toggleRecording()
           } label: {
             HStack(spacing: 8) {
-              Image(systemName: vm.isRecording ? "stop.circle.fill" : "mic.circle.fill")
-              Text(vm.isRecording ? "Stop" : "Talk")
+              Image(systemName: vm.isRecording ? "waveform.circle.fill" : "mic.circle.fill")
+                .foregroundStyle(vm.isRecording ? .green : .primary)
+              Text(vm.isRecording ? (vm.useServerVAD ? "Listening..." : "Stop") : "Talk")
             }
           }
           .buttonStyle(.bordered)
-          .disabled(vm.state != .connected)
+          .disabled(vm.state != .connected || !vm.isSessionReady)
+          .help(vm.useServerVAD
+                ? "Click Talk to start listening. Stop speaking to trigger a response. If it doesn't trigger, click again to Stop (force send)."
+                : "Click Talk to start recording, then click Stop to send.")
 
           Spacer()
+        }
+
+        HStack(spacing: 10) {
+          Text(vm.isSessionReady ? "Session ready" : "Syncing session…")
+            .font(.system(size: 11))
+            .foregroundColor(vm.isSessionReady ? .secondary : .orange.opacity(0.9))
+
+          Spacer()
+
+          Text("Mic")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+
+          ProgressView(value: min(1.0, vm.micLevel))
+            .frame(width: 120)
         }
 
         HStack(spacing: 10) {

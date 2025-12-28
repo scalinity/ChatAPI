@@ -24,9 +24,6 @@ struct ChatView: View {
               Text("ChatAPI")
                 .font(.system(size: 34, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
-              Text("Zero-context scientific auditing via OpenRouter")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
             }
 
             PromptBarWithAttachments()
@@ -175,6 +172,7 @@ struct ChatView: View {
         .padding(.horizontal, 18)
         .padding(.top, 16)
         .padding(.bottom, 8)
+        .focusEffectDisabled()
         .onSubmit {
           chat.send()
         }
@@ -196,19 +194,17 @@ struct ChatView: View {
       .padding(.horizontal, 14)
       .padding(.bottom, 12)
     }
-    .background(
-      .ultraThinMaterial,
-      in: RoundedRectangle(cornerRadius: 26, style: .continuous)
-    )
-    .background(
+    .background {
       RoundedRectangle(cornerRadius: 26, style: .continuous)
-        .fill(Color.black.opacity(0.25))
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: 26, style: .continuous)
-        .stroke(isDropTargeted ? Color.accentColor.opacity(0.65) : .clear, lineWidth: isDropTargeted ? 2 : 0)
-    )
+        .fill(Color(white: 0.12))
+    }
+    .overlay {
+      if isDropTargeted {
+        RoundedRectangle(cornerRadius: 26, style: .continuous)
+          .stroke(Color.accentColor.opacity(0.65), lineWidth: 2)
+      }
+    }
+    .focusEffectDisabled()
   }
 
   // MARK: - Attachment Menu
@@ -946,16 +942,19 @@ private final class ToolRunner: ObservableObject {
           presencePenalty: presencePenalty,
           reasoningEnabled: reasoningEnabled,
           reasoningEffort: reasoningEffort,
-          onRawEvent: { evt in
-            Task { @MainActor in
-              self.raw.append(evt)
-              self.raw.append("\n")
+          onRawEvent: { [weak self] evt in
+            DispatchQueue.main.async {
+              self?.raw.append(evt)
+              self?.raw.append("\n")
             }
           },
-          onAssistantDelta: { delta in
-            Task { @MainActor in
-              self.output.append(delta)
+          onAssistantDelta: { [weak self] delta in
+            DispatchQueue.main.async {
+              self?.output.append(delta)
             }
+          },
+          onReasoningDelta: { _ in
+            // Ignore reasoning in tool sheets (focus on final output)
           }
         )
         await MainActor.run { self.isRunning = false }
@@ -1121,9 +1120,39 @@ private struct ImageToolSheet: View {
         .textFieldStyle(.roundedBorder)
         .lineLimit(1...6)
 
+      // Show uploaded images
+      if !attachments.isEmpty {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(attachments) { att in
+              if let img = NSImage(data: att.data) {
+                Image(nsImage: img)
+                  .resizable()
+                  .aspectRatio(contentMode: .fill)
+                  .frame(width: 60, height: 60)
+                  .clipShape(RoundedRectangle(cornerRadius: 8))
+                  .overlay(alignment: .topTrailing) {
+                    Button {
+                      attachments.removeAll { $0.id == att.id }
+                    } label: {
+                      Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.white, .black.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 4, y: -4)
+                  }
+              }
+            }
+          }
+        }
+      }
+
       HStack {
-        Button("Use current attachments") {
-          attachments = chat.pendingAttachments
+        Button {
+          openImagePicker()
+        } label: {
+          Label("Image Upload", systemImage: "photo.badge.plus")
         }
         .buttonStyle(.bordered)
 
@@ -1147,12 +1176,21 @@ private struct ImageToolSheet: View {
           }
         }
         .buttonStyle(.borderedProminent)
+        .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
         Spacer()
-
-        Text("Stateless run")
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
+        
+        Button {
+          // Set the model in main chat and copy prompt/attachments there
+          chat.selectedModelID = toolModelID.isEmpty ? (chat.recommendedImageModelID ?? chat.selectedModelID) : toolModelID
+          chat.inputText = prompt
+          chat.pendingAttachments = attachments
+          dismiss()
+        } label: {
+          Label("Use in Chat", systemImage: "bubble.left.and.bubble.right")
+        }
+        .buttonStyle(.bordered)
+        .help("Switch to this model in the main chat for back-to-back edits")
       }
 
       if !detectedImages.isEmpty || !detectedImageLinks.isEmpty {
@@ -1184,6 +1222,23 @@ private struct ImageToolSheet: View {
       }
       .prefix(6)
       .map { $0 }
+  }
+  
+  private func openImagePicker() {
+    let panel = NSOpenPanel()
+    panel.allowsMultipleSelection = true
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.allowedContentTypes = [.image, .png, .jpeg, .gif, .webP, .heic]
+    panel.message = "Select images to upload"
+    
+    if panel.runModal() == .OK {
+      for url in panel.urls {
+        if let attachment = Attachment.fromURL(url) {
+          attachments.append(attachment)
+        }
+      }
+    }
   }
 }
 

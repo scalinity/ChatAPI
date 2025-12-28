@@ -7,12 +7,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     // PRIVACY: Explicit best-effort wipe signal before process teardown.
-    NotificationCenter.default.post(name: .openScienceNativeWillTerminate, object: nil)
+    NotificationCenter.default.post(name: .chatAPIWillTerminate, object: nil)
   }
 }
 
 extension Notification.Name {
-  static let openScienceNativeWillTerminate = Notification.Name("OpenScienceNative.willTerminate")
+  static let chatAPIWillTerminate = Notification.Name("ChatAPI.willTerminate")
 }
 
 

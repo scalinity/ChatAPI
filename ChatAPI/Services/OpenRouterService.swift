@@ -141,7 +141,8 @@ final class OpenRouterService {
     reasoningEffort: String,
     maxTokens: Int? = nil,
     onRawEvent: @Sendable (String) -> Void,
-    onAssistantDelta: @Sendable (String) -> Void
+    onAssistantDelta: @Sendable (String) -> Void,
+    onReasoningDelta: @Sendable (String) -> Void
   ) async throws {
     guard let key = apiKey.stringValue(), !key.isEmpty else {
       throw OpenRouterServiceError.missingAPIKey
@@ -208,8 +209,16 @@ final class OpenRouterService {
 
       guard let jsonData = payload.data(using: .utf8) else { continue }
       guard let chunk = try? decoder.decode(ChatCompletionChunk.self, from: jsonData) else { continue }
-      guard let delta = chunk.choices?.first?.delta?.content, !delta.isEmpty else { continue }
-      onAssistantDelta(delta)
+      
+      // Parse reasoning stream (thinking process) - uses unified accessor for provider compatibility
+      if let reasoning = chunk.choices?.first?.delta?.effectiveReasoning, !reasoning.isEmpty {
+        onReasoningDelta(reasoning)
+      }
+      
+      // Parse main content stream
+      if let delta = chunk.choices?.first?.delta?.content, !delta.isEmpty {
+        onAssistantDelta(delta)
+      }
     }
   }
 

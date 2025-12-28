@@ -10,7 +10,7 @@
 - **Direct networking**: `URLSession` targets `https://openrouter.ai/api/v1` using an **ephemeral** configuration (no cookies/cache).
 
 ## Running
-1. Open `OpenScienceNative.xcodeproj` in Xcode.
+1. Open `ChatAPI.xcodeproj` in Xcode.
 2. Set a signing team (or run unsigned locally as appropriate).
 3. Provide your OpenRouter key:
    - Preferred: `OPENROUTER_API_KEY` environment variable (e.g. exported in `~/.zshrc`), or
