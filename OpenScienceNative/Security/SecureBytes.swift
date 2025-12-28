@@ -156,4 +156,66 @@ enum APIKeyKeychainStore {
   }
 }
 
+/// Persistent xAI API key storage (allowed exception for functionality).
+/// - PRIVACY: Stores only the xAI API key in the system Keychain.
+enum XAIKeychainStore {
+  private static let service = "com.openscience.OpenScienceNative"
+  private static let account = "xai_api_key"
+
+  static func load() throws -> String? {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
+      kSecAttrAccount as String: account,
+      kSecMatchLimit as String: kSecMatchLimitOne,
+      kSecReturnData as String: true,
+    ]
+
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    if status == errSecItemNotFound { return nil }
+    guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+
+    guard let data = item as? Data else { throw KeychainError.invalidData }
+    guard let string = String(data: data, encoding: .utf8) else { throw KeychainError.invalidData }
+    return string
+  }
+
+  static func save(_ apiKey: String) throws {
+    let data = Data(apiKey.utf8)
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
+      kSecAttrAccount as String: account,
+    ]
+
+    let update: [String: Any] = [
+      kSecValueData as String: data,
+    ]
+
+    let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+    if status == errSecItemNotFound {
+      var add = query
+      add[kSecValueData as String] = data
+      add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+      let addStatus = SecItemAdd(add as CFDictionary, nil)
+      guard addStatus == errSecSuccess else { throw KeychainError.unexpectedStatus(addStatus) }
+      return
+    }
+    guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+  }
+
+  static func delete() throws {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
+      kSecAttrAccount as String: account,
+    ]
+    let status = SecItemDelete(query as CFDictionary)
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw KeychainError.unexpectedStatus(status)
+    }
+  }
+}
+
 

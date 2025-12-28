@@ -21,6 +21,9 @@
 		A1B2C3D4E5F60718293A4B8B /* StarfieldBackgroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B76 /* StarfieldBackgroundView.swift */; };
 		A1B2C3D4E5F60718293A4B8C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B77 /* Assets.xcassets */; };
 		A1B2C3D4E5F60718293A4B8E /* Attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B8D /* Attachment.swift */; };
+		A1B2C3D4E5F60718293A4B92 /* GrokVoiceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B8F /* GrokVoiceService.swift */; };
+		A1B2C3D4E5F60718293A4B93 /* GrokVoiceViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B90 /* GrokVoiceViewModel.swift */; };
+		A1B2C3D4E5F60718293A4B94 /* GrokVoiceAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B91 /* GrokVoiceAgentSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +44,9 @@
 		A1B2C3D4E5F60718293A4B78 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B79 /* OpenScienceNative.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenScienceNative.entitlements; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B8D /* Attachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attachment.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B8F /* GrokVoiceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokVoiceService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B90 /* GrokVoiceViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokVoiceViewModel.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B91 /* GrokVoiceAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokVoiceAgentSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,6 +115,7 @@
 			isa = PBXGroup;
 			children = (
 				A1B2C3D4E5F60718293A4B71 /* OpenRouterService.swift */,
+				A1B2C3D4E5F60718293A4B8F /* GrokVoiceService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -117,6 +124,7 @@
 			isa = PBXGroup;
 			children = (
 				A1B2C3D4E5F60718293A4B72 /* ChatViewModel.swift */,
+				A1B2C3D4E5F60718293A4B90 /* GrokVoiceViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -128,6 +136,7 @@
 				A1B2C3D4E5F60718293A4B74 /* LabSettingsView.swift */,
 				A1B2C3D4E5F60718293A4B75 /* MessageBubbleView.swift */,
 				A1B2C3D4E5F60718293A4B76 /* StarfieldBackgroundView.swift */,
+				A1B2C3D4E5F60718293A4B91 /* GrokVoiceAgentSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -214,11 +223,14 @@
 				A1B2C3D4E5F60718293A4B84 /* OpenRouterModel.swift in Sources */,
 				A1B2C3D4E5F60718293A4B85 /* SecureBytes.swift in Sources */,
 				A1B2C3D4E5F60718293A4B86 /* OpenRouterService.swift in Sources */,
+				A1B2C3D4E5F60718293A4B92 /* GrokVoiceService.swift in Sources */,
 				A1B2C3D4E5F60718293A4B87 /* ChatViewModel.swift in Sources */,
+				A1B2C3D4E5F60718293A4B93 /* GrokVoiceViewModel.swift in Sources */,
 				A1B2C3D4E5F60718293A4B88 /* ChatView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B89 /* LabSettingsView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B8A /* MessageBubbleView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B8B /* StarfieldBackgroundView.swift in Sources */,
+				A1B2C3D4E5F60718293A4B94 /* GrokVoiceAgentSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

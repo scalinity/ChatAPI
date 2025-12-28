@@ -44,6 +44,8 @@
 	<string>14.0</string>
 	<key>NSAccentColorName</key>
 	<string>AccentColor</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>OpenScience Native uses the microphone for real-time Grok Voice Agent conversations. Audio is streamed and not stored on disk.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

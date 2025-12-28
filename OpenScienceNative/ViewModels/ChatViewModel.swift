@@ -81,6 +81,36 @@ final class ChatViewModel: ObservableObject {
     models.reversed()
   }
 
+  var selectedModel: OpenRouterModel? {
+    models.first(where: { $0.id == selectedModelID })
+  }
+
+  /// Models that officially advertise image output capability via OpenRouter metadata.
+  var imageOutputModels: [OpenRouterModel] {
+    models.filter { $0.capabilities.supportsImageOutput }
+  }
+
+  /// Models that officially advertise video output capability via OpenRouter metadata.
+  var videoOutputModels: [OpenRouterModel] {
+    models.filter { $0.capabilities.supportsVideoOutput }
+  }
+
+  /// Most recent image-capable model by OpenRouter `created` metadata (fallback: highest context length).
+  var recommendedImageModelID: String? {
+    imageOutputModels
+      .sorted(by: OpenRouterModelComparator.compareNewestFirst)
+      .first?
+      .id
+  }
+
+  /// Most recent video-capable model by OpenRouter `created` metadata (fallback: highest context length).
+  var recommendedVideoModelID: String? {
+    videoOutputModels
+      .sorted(by: OpenRouterModelComparator.compareNewestFirst)
+      .first?
+      .id
+  }
+
   private let service = OpenRouterService()
   private var streamingTask: Task<Void, Never>?
   private var terminationObserver: Any?
@@ -305,6 +335,8 @@ final class ChatViewModel: ObservableObject {
 
     let modelID = selectedModelID
     let systemPrompt = systemPromptText // empty => omitted by service
+    let modelMeta = selectedModel
+    let reasoningAllowed = modelMeta?.capabilities.supportsReasoning ?? true
 
     streamingTask = Task { [weak self] in
       guard let self else { return }
@@ -321,7 +353,8 @@ final class ChatViewModel: ObservableObject {
           topP: self.settings.topP,
           frequencyPenalty: self.settings.frequencyPenalty,
           presencePenalty: self.settings.presencePenalty,
-          reasoningEnabled: self.settings.reasoningEnabled,
+          // Use official metadata: only send `reasoning` if the model supports it.
+          reasoningEnabled: self.settings.reasoningEnabled && reasoningAllowed,
           reasoningEffort: self.settings.reasoningEffort,
           onRawEvent: { raw in
             Task { @MainActor in
@@ -516,6 +549,20 @@ private struct MCPHTTPClient {
     }
 
     return (tools, raw)
+  }
+}
+
+// MARK: - OpenRouter model ordering helpers
+
+private enum OpenRouterModelComparator {
+  static func compareNewestFirst(_ a: OpenRouterModel, _ b: OpenRouterModel) -> Bool {
+    let ca = a.created ?? 0
+    let cb = b.created ?? 0
+    if ca != cb { return ca > cb }
+    let la = a.context_length ?? 0
+    let lb = b.context_length ?? 0
+    if la != lb { return la > lb }
+    return a.id < b.id
   }
 }
 

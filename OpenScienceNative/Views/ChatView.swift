@@ -9,6 +9,7 @@ struct ChatView: View {
   @State private var isModelPopoverPresented: Bool = false
   @State private var modelQuery: String = ""
   @State private var activeToolSheet: ToolSheet?
+  @State private var isVoiceAgentPresented: Bool = false
 
   var body: some View {
     HStack(spacing: 0) {
@@ -80,6 +81,9 @@ struct ChatView: View {
           AgentLabsToolSheet()
             .environmentObject(chat)
         }
+      }
+      .sheet(isPresented: $isVoiceAgentPresented) {
+        GrokVoiceAgentSheet()
       }
 
       if chat.isInspectorPresented {
@@ -161,6 +165,8 @@ struct ChatView: View {
 
         ModelButton()
 
+        VoiceButton()
+
         SendButton()
       }
       .padding(.horizontal, 14)
@@ -238,7 +244,6 @@ struct ChatView: View {
     .popover(isPresented: $isToolsPopoverPresented, arrowEdge: .bottom) {
       ToolsPopover(
         modelID: chat.selectedModelID,
-        connectorCount: chat.mcpConnectors.count,
         onSelect: { action in
           isToolsPopoverPresented = false
           handleToolSelection(action)
@@ -266,6 +271,8 @@ struct ChatView: View {
       activeToolSheet = .canvas
     case .agentLabs:
       activeToolSheet = .agentLabs
+    case .voiceAgent:
+      isVoiceAgentPresented = true
     }
   }
 
@@ -338,6 +345,20 @@ struct ChatView: View {
       .frame(width: 380, height: 420)
       .padding(12)
     }
+  }
+
+  private func VoiceButton() -> some View {
+    Button {
+      isVoiceAgentPresented = true
+    } label: {
+      Image(systemName: "mic")
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(.primary)
+        .frame(width: 34, height: 34)
+        .background(Circle().fill(.white.opacity(0.08)))
+    }
+    .buttonStyle(.plain)
+    .help("Voice Agent")
   }
 
   private func SendButton() -> some View {
@@ -457,6 +478,7 @@ private enum ToolAction: String, CaseIterable, Identifiable {
   case guidedLearning
   case deepThink
   case agentLabs
+  case voiceAgent
 
   var id: String { rawValue }
 }
@@ -552,28 +574,32 @@ private struct AttachmentChip: View {
 private struct ToolsPopover: View {
   @EnvironmentObject private var chat: ChatViewModel
   let modelID: String
-  let connectorCount: Int
   let onSelect: (ToolAction) -> Void
 
   var body: some View {
+    let selected = chat.models.first(where: { $0.id == modelID })
+    let imageToolModel = recommendedImageModel()
+    let videoToolModel = recommendedVideoModel()
+
     VStack(alignment: .leading, spacing: 10) {
       Text("Tools")
         .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(.secondary)
 
       toolRow(.deepResearch, icon: "magnifyingglass")
+      toolRow(.voiceAgent, icon: "mic")
       toolRow(.canvas, icon: "square.and.pencil")
 
-      if isVideoCapable(modelID) {
-        toolRow(.createVideo, icon: "video")
+      if let videoToolModel {
+        toolRow(.createVideo, icon: "video", subtitle: videoToolLabel(videoToolModel))
       } else {
-        toolRow(.createVideo, icon: "video", enabled: false, hint: "Not available for this model")
+        toolRow(.createVideo, icon: "video", enabled: false, hint: "No video-capable models detected from /models metadata")
       }
 
-      if isImageCapable(modelID) {
-        toolRow(.createImages, icon: "photo")
+      if let imageToolModel {
+        toolRow(.createImages, icon: "photo", subtitle: imageToolLabel(imageToolModel))
       } else {
-        toolRow(.createImages, icon: "photo", enabled: false, hint: "Not available for this model")
+        toolRow(.createImages, icon: "photo", enabled: false, hint: "No image-capable models detected from /models metadata")
       }
 
       Divider().opacity(0.35)
@@ -594,7 +620,7 @@ private struct ToolsPopover: View {
         .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(.secondary)
 
-      if connectorCount == 0 {
+      if chat.mcpConnectors.isEmpty {
         Text("No connectors configured")
           .font(.system(size: 11))
           .foregroundStyle(.secondary)
@@ -633,11 +659,17 @@ private struct ToolsPopover: View {
         .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.06)))
       }
       .buttonStyle(.plain)
+
+      if let selected, !(selected.capabilities.supportsTools) {
+        Text("Selected model does not advertise `tools` support in /models metadata.")
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
+      }
     }
   }
 
   @ViewBuilder
-  private func toolRow(_ action: ToolAction, icon: String, enabled: Bool = true, hint: String? = nil, badge: String? = nil) -> some View {
+  private func toolRow(_ action: ToolAction, icon: String, subtitle: String? = nil, enabled: Bool = true, hint: String? = nil, badge: String? = nil) -> some View {
     Button {
       onSelect(action)
     } label: {
@@ -645,8 +677,17 @@ private struct ToolsPopover: View {
         Image(systemName: icon)
           .frame(width: 18)
 
-        Text(title(for: action))
-          .font(.system(size: 13, weight: .medium))
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title(for: action))
+            .font(.system(size: 13, weight: .medium))
+          if let subtitle {
+            Text(subtitle)
+              .font(.system(size: 11))
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
+        }
 
         Spacer()
 
@@ -676,6 +717,7 @@ private struct ToolsPopover: View {
   private func title(for action: ToolAction) -> String {
     switch action {
     case .deepResearch: return "Deep Research"
+    case .voiceAgent: return "Voice Agent (Grok)"
     case .createVideo: return "Create videos"
     case .createImages: return "Create images"
     case .canvas: return "Canvas"
@@ -685,14 +727,33 @@ private struct ToolsPopover: View {
     }
   }
 
-  private func isImageCapable(_ modelID: String) -> Bool {
-    let id = modelID.lowercased()
-    return id.contains("gpt") || id.contains("gemini") || id.contains("claude") || id.contains("vision") || id.contains("image") || id.contains("flux") || id.contains("sdxl") || id.contains("dall")
+  // MARK: - Official OpenRouter metadata capability detection
+
+  private func recommendedImageModel() -> OpenRouterModel? {
+    let candidates = chat.imageOutputModels
+    guard !candidates.isEmpty else { return nil }
+    return candidates.sorted(by: OpenRouterModelComparatorPublic.compareNewestFirst).first
   }
 
-  private func isVideoCapable(_ modelID: String) -> Bool {
-    let id = modelID.lowercased()
-    return id.contains("gpt") || id.contains("gemini") || id.contains("veo") || id.contains("sora") || id.contains("video") || id.contains("luma")
+  private func recommendedVideoModel() -> OpenRouterModel? {
+    let candidates = chat.videoOutputModels
+    guard !candidates.isEmpty else { return nil }
+    return candidates.sorted(by: OpenRouterModelComparatorPublic.compareNewestFirst).first
+  }
+
+  private func imageToolLabel(_ model: OpenRouterModel) -> String {
+    model.name ?? shortID(model.id)
+  }
+
+  private func videoToolLabel(_ model: OpenRouterModel) -> String {
+    model.name ?? shortID(model.id)
+  }
+
+  private func shortID(_ modelID: String) -> String {
+    if let slash = modelID.lastIndex(of: "/") {
+      return String(modelID[modelID.index(after: slash)...])
+    }
+    return modelID
   }
 
   private func color(for status: MCPConnector.Status) -> Color {
@@ -702,6 +763,19 @@ private struct ToolsPopover: View {
     case .connected: return .green.opacity(0.9)
     case .error: return .red.opacity(0.9)
     }
+  }
+}
+
+// Cross-file helper (avoid making internal comparator public in the view model file).
+private enum OpenRouterModelComparatorPublic {
+  static func compareNewestFirst(_ a: OpenRouterModel, _ b: OpenRouterModel) -> Bool {
+    let ca = a.created ?? 0
+    let cb = b.created ?? 0
+    if ca != cb { return ca > cb }
+    let la = a.context_length ?? 0
+    let lb = b.context_length ?? 0
+    if la != lb { return la > lb }
+    return a.id < b.id
   }
 }
 
@@ -997,6 +1071,7 @@ private struct ImageToolSheet: View {
   @StateObject private var runner = ToolRunner()
   @State private var prompt: String = ""
   @State private var attachments: [Attachment] = []
+  @State private var toolModelID: String = ""
 
   var body: some View {
     VStack(spacing: 12) {
@@ -1005,6 +1080,19 @@ private struct ImageToolSheet: View {
           .font(.system(size: 14, weight: .semibold))
         Spacer()
         Button("Close") { dismiss() }
+      }
+
+      if !chat.imageOutputModels.isEmpty {
+        Picker("Model", selection: $toolModelID) {
+          ForEach(chat.imageOutputModels.sorted(by: OpenRouterModelComparatorPublic.compareNewestFirst), id: \.id) { m in
+            Text(m.id).tag(m.id)
+          }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+      } else {
+        Text("No image-capable models detected from /models metadata.")
+          .foregroundStyle(.secondary)
       }
 
       TextField("Describe the image you want…", text: $prompt, axis: .vertical)
@@ -1023,7 +1111,7 @@ private struct ImageToolSheet: View {
           } else {
             runner.run(
               apiKey: chat.apiKey,
-              model: chat.selectedModelID,
+              model: toolModelID.isEmpty ? (chat.recommendedImageModelID ?? chat.selectedModelID) : toolModelID,
               systemPrompt: chat.systemPromptText,
               prompt: prompt,
               attachments: attachments,
@@ -1055,6 +1143,11 @@ private struct ImageToolSheet: View {
     }
     .padding(16)
     .frame(minWidth: 850, minHeight: 620)
+    .onAppear {
+      if toolModelID.isEmpty {
+        toolModelID = chat.recommendedImageModelID ?? chat.selectedModelID
+      }
+    }
   }
 
   private var detectedImages: [NSImage] {
@@ -1077,6 +1170,7 @@ private struct VideoToolSheet: View {
   @Environment(\.dismiss) private var dismiss
   @StateObject private var runner = ToolRunner()
   @State private var prompt: String = ""
+  @State private var toolModelID: String = ""
 
   var body: some View {
     VStack(spacing: 12) {
@@ -1085,6 +1179,19 @@ private struct VideoToolSheet: View {
           .font(.system(size: 14, weight: .semibold))
         Spacer()
         Button("Close") { dismiss() }
+      }
+
+      if !chat.videoOutputModels.isEmpty {
+        Picker("Model", selection: $toolModelID) {
+          ForEach(chat.videoOutputModels.sorted(by: OpenRouterModelComparatorPublic.compareNewestFirst), id: \.id) { m in
+            Text(m.id).tag(m.id)
+          }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+      } else {
+        Text("No video-capable models detected from /models metadata.")
+          .foregroundStyle(.secondary)
       }
 
       TextField("Describe the video you want…", text: $prompt, axis: .vertical)
@@ -1098,7 +1205,7 @@ private struct VideoToolSheet: View {
           } else {
             runner.run(
               apiKey: chat.apiKey,
-              model: chat.selectedModelID,
+              model: toolModelID.isEmpty ? (chat.recommendedVideoModelID ?? chat.selectedModelID) : toolModelID,
               systemPrompt: chat.systemPromptText,
               prompt: prompt,
               attachments: [],
@@ -1130,6 +1237,11 @@ private struct VideoToolSheet: View {
     }
     .padding(16)
     .frame(minWidth: 850, minHeight: 620)
+    .onAppear {
+      if toolModelID.isEmpty {
+        toolModelID = chat.recommendedVideoModelID ?? chat.selectedModelID
+      }
+    }
   }
 
   private var detectedVideoLinks: [URL] {

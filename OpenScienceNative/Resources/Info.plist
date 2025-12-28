@@ -22,6 +22,8 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>OpenScience Native uses the microphone for real-time Grok Voice Agent conversations. Audio is streamed and not stored on disk.</string>
 </dict>
 </plist>
 
