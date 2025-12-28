@@ -63,6 +63,176 @@ final class OpenRouterService {
   private let session: URLSession
   private let decoder = JSONDecoder()
 
+  // MARK: - Streaming (SSE) Delegate
+
+  /// Delegate-based SSE parser that avoids chunkiness from partial JSON frames and buffering.
+  private final class SSEStreamDelegate: NSObject, URLSessionDataDelegate {
+    private let decoder: JSONDecoder
+    private let onRawEvent: @Sendable (String) -> Void
+    private let onAssistantDelta: @Sendable (String) -> Void
+    private let onReasoningDelta: @Sendable (String) -> Void
+    private let onComplete: @Sendable (Result<Void, Error>) -> Void
+
+    private var buffer = Data()
+    private var errorBody = Data()
+    private var statusCode: Int?
+
+    private let completionLock = NSLock()
+    private var didComplete = false
+
+    private weak var session: URLSession?
+    private weak var task: URLSessionTask?
+
+    init(
+      decoder: JSONDecoder,
+      onRawEvent: @escaping @Sendable (String) -> Void,
+      onAssistantDelta: @escaping @Sendable (String) -> Void,
+      onReasoningDelta: @escaping @Sendable (String) -> Void,
+      onComplete: @escaping @Sendable (Result<Void, Error>) -> Void
+    ) {
+      self.decoder = decoder
+      self.onRawEvent = onRawEvent
+      self.onAssistantDelta = onAssistantDelta
+      self.onReasoningDelta = onReasoningDelta
+      self.onComplete = onComplete
+    }
+
+    func bind(session: URLSession, task: URLSessionTask) {
+      self.session = session
+      self.task = task
+    }
+
+    func urlSession(
+      _ session: URLSession,
+      dataTask: URLSessionDataTask,
+      didReceive response: URLResponse,
+      completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+      if let http = response as? HTTPURLResponse {
+        statusCode = http.statusCode
+      }
+      completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+      // If HTTP status is an error, buffer response body (up to 100KB) and let completion handle it.
+      if let code = statusCode, !(200..<300).contains(code) {
+        if errorBody.count < 100_000 {
+          let remaining = 100_000 - errorBody.count
+          errorBody.append(data.prefix(remaining))
+        }
+        return
+      }
+
+      buffer.append(data)
+      processBuffer()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+      // HTTP error (non-2xx)
+      if let code = statusCode, !(200..<300).contains(code) {
+        let bodyText = String(data: errorBody, encoding: .utf8) ?? ""
+        complete(.failure(OpenRouterServiceError.httpError(statusCode: code, body: sanitizeErrorBody(bodyText))))
+        return
+      }
+
+      if let nsError = error as NSError? {
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
+          complete(.failure(CancellationError()))
+        } else {
+          complete(.failure(nsError))
+        }
+        return
+      }
+
+      complete(.success(()))
+    }
+
+    private func complete(_ result: Result<Void, Error>) {
+      completionLock.lock()
+      if didComplete {
+        completionLock.unlock()
+        return
+      }
+      didComplete = true
+      completionLock.unlock()
+
+      onComplete(result)
+      session?.finishTasksAndInvalidate()
+    }
+
+    private func processBuffer() {
+      while let eventData = nextEventFromBuffer() {
+        parseEvent(eventData)
+      }
+    }
+
+    private func nextEventFromBuffer() -> Data? {
+      let lf = Data("\n\n".utf8)
+      let crlf = Data("\r\n\r\n".utf8)
+
+      let lfRange = buffer.range(of: lf)
+      let crlfRange = buffer.range(of: crlf)
+
+      // Pick the earliest delimiter, supporting both LF and CRLF.
+      let chosenRange: Range<Data.Index>?
+      switch (lfRange, crlfRange) {
+      case (nil, nil):
+        chosenRange = nil
+      case (let a?, nil):
+        chosenRange = a
+      case (nil, let b?):
+        chosenRange = b
+      case (let a?, let b?):
+        chosenRange = a.lowerBound < b.lowerBound ? a : b
+      }
+
+      guard let range = chosenRange else { return nil }
+      let end = range.upperBound
+      let event = buffer.subdata(in: 0..<end)
+      buffer.removeSubrange(0..<end)
+      return event
+    }
+
+    private func parseEvent(_ eventData: Data) {
+      guard let eventString = String(data: eventData, encoding: .utf8) else { return }
+
+      // Collect all `data:` lines in the SSE event. (OpenRouter typically sends exactly one.)
+      var dataLines: [String] = []
+      for rawLine in eventString.split(whereSeparator: \.isNewline) {
+        let line = String(rawLine)
+        if line.hasPrefix("data:") {
+          let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+          dataLines.append(payload)
+        }
+      }
+
+      guard !dataLines.isEmpty else { return }
+      let payload = dataLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+      handlePayload(payload)
+    }
+
+    private func handlePayload(_ payload: String) {
+      onRawEvent(payload)
+
+      if payload == "[DONE]" {
+        complete(.success(()))
+        task?.cancel()
+        return
+      }
+
+      guard let jsonData = payload.data(using: .utf8) else { return }
+      guard let chunk = try? decoder.decode(ChatCompletionChunk.self, from: jsonData) else { return }
+
+      if let reasoning = chunk.choices?.first?.delta?.effectiveReasoning, !reasoning.isEmpty {
+        onReasoningDelta(reasoning)
+      }
+      if let delta = chunk.choices?.first?.delta?.content, !delta.isEmpty {
+        onAssistantDelta(delta)
+      }
+    }
+  }
+
   init() {
     let config = URLSessionConfiguration.ephemeral
     config.urlCache = nil
@@ -140,9 +310,9 @@ final class OpenRouterService {
     reasoningEnabled: Bool,
     reasoningEffort: String,
     maxTokens: Int? = nil,
-    onRawEvent: @Sendable (String) -> Void,
-    onAssistantDelta: @Sendable (String) -> Void,
-    onReasoningDelta: @Sendable (String) -> Void
+    onRawEvent: @escaping @Sendable (String) -> Void,
+    onAssistantDelta: @escaping @Sendable (String) -> Void,
+    onReasoningDelta: @escaping @Sendable (String) -> Void
   ) async throws {
     guard let key = apiKey.stringValue(), !key.isEmpty else {
       throw OpenRouterServiceError.missingAPIKey
@@ -177,49 +347,60 @@ final class OpenRouterService {
     request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+    // Best-effort: ask intermediaries not to buffer SSE.
+    request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+    request.setValue("no", forHTTPHeaderField: "X-Accel-Buffering")
     request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
 
-    let (bytes, response) = try await session.bytes(for: request)
-    guard let http = response as? HTTPURLResponse else {
-      throw OpenRouterServiceError.invalidResponse
+    // Delegate-based streaming to avoid chunkiness from partial SSE frames.
+    final class TaskBox: @unchecked Sendable {
+      private let lock = NSLock()
+      private var _task: URLSessionTask?
+      func set(_ task: URLSessionTask) { lock.withLock { _task = task } }
+      func cancel() { lock.withLock { _task?.cancel() } }
     }
 
-    guard (200..<300).contains(http.statusCode) else {
-      var data = Data()
-      for try await byte in bytes {
-        data.append(byte)
-        // SECURITY: Limit error response size to prevent memory exhaustion
-        if data.count > 100_000 { break }
-      }
-      let bodyText = String(data: data, encoding: .utf8) ?? ""
-      // SECURITY: Sanitize error body before exposing
-      throw OpenRouterServiceError.httpError(statusCode: http.statusCode, body: sanitizeErrorBody(bodyText))
-    }
+    let taskBox = TaskBox()
 
-    for try await line in bytes.lines {
-      try Task.checkCancellation()
-      guard line.hasPrefix("data:") else { continue }
+    try await withTaskCancellationHandler(operation: {
+      try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+        let delegate = SSEStreamDelegate(
+          decoder: self.decoder,
+          onRawEvent: onRawEvent,
+          onAssistantDelta: onAssistantDelta,
+          onReasoningDelta: onReasoningDelta
+        ) { result in
+          switch result {
+          case .success:
+            cont.resume()
+          case .failure(let error):
+            cont.resume(throwing: error)
+          }
+        }
 
-      let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-      onRawEvent(String(payload))
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
+        config.waitsForConnectivity = false
+        config.httpShouldUsePipelining = true
+        config.connectionProxyDictionary = [
+          kCFNetworkProxiesHTTPEnable as String: 0,
+          kCFNetworkProxiesHTTPSEnable as String: 0,
+        ]
 
-      if payload == "[DONE]" {
-        break
+        // Use a dedicated session for delegate streaming.
+        let streamSession = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        let task = streamSession.dataTask(with: request)
+        delegate.bind(session: streamSession, task: task)
+        taskBox.set(task)
+        task.resume()
       }
-
-      guard let jsonData = payload.data(using: .utf8) else { continue }
-      guard let chunk = try? decoder.decode(ChatCompletionChunk.self, from: jsonData) else { continue }
-      
-      // Parse reasoning stream (thinking process) - uses unified accessor for provider compatibility
-      if let reasoning = chunk.choices?.first?.delta?.effectiveReasoning, !reasoning.isEmpty {
-        onReasoningDelta(reasoning)
-      }
-      
-      // Parse main content stream
-      if let delta = chunk.choices?.first?.delta?.content, !delta.isEmpty {
-        onAssistantDelta(delta)
-      }
-    }
+    }, onCancel: {
+      taskBox.cancel()
+    })
   }
 
   // MARK: - Multimodal Request Builder
