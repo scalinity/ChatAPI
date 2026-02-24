@@ -65,7 +65,7 @@ final class ChatViewModel: ObservableObject {
   @Published var rawErrorBody: String = ""
 
   @Published var models: [OpenRouterModel] = []
-  @Published var selectedModelID: String = "openai/o3" // sensible default; user may choose any fetched model
+  @Published var selectedModelID: String = "anthropic/claude-opus-4.6" // sensible default; user may choose any fetched model
 
   @Published var isSending: Bool = false
   @Published var isInspectorPresented: Bool = true
@@ -150,13 +150,22 @@ final class ChatViewModel: ObservableObject {
   }
 
   func bootstrapFromEnvironmentIfAvailable() {
-    // Only check environment variable - no keychain access to avoid repeated auth dialogs
+    // Precedence: ENV (e.g. ~/.zshrc) > Keychain
     let envKey = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
     if let envKey, !envKey.isEmpty {
       apiKey.set(utf8String: envKey)
+      // Persist env key once so Finder/Xcode launches work too
+      if (try? APIKeyKeychainStore.load()) == nil {
+        try? APIKeyKeychainStore.save(envKey)
+      }
       return
     }
-    // Don't auto-load from keychain - user must click "Load" to avoid password prompts
+
+    // Try keychain silently
+    if let stored = try? APIKeyKeychainStore.load(), !stored.isEmpty {
+      apiKey.set(utf8String: stored)
+      return
+    }
   }
 
   /// Explicitly load API key from keychain (user-initiated to avoid surprise auth dialogs).
@@ -433,12 +442,20 @@ final class ChatViewModel: ObservableObject {
   private static func pickDefaultModelID(from models: [OpenRouterModel]) -> String? {
     // Heuristic: prefer well-known top-tier IDs when present; otherwise fall back to first.
     let preferred = [
+      "anthropic/claude-opus-4.6",
+      "anthropic/claude-sonnet-4.6",
+      "anthropic/claude-opus-4.5",
+      "google/gemini-3.1-pro-preview",
+      "google/gemini-3-pro-preview",
+      "google/gemini-3-flash-preview",
+      "openai/gpt-5.2",
+      "openai/gpt-5.1",
+      "x-ai/grok-4.1-fast",
+      "deepseek/deepseek-v3.2",
+      "mistralai/mistral-large-2512",
       "openai/o3",
-      "openai/o1",
       "openai/gpt-4.1",
       "openai/gpt-4o",
-      "anthropic/claude-3.5-sonnet",
-      "anthropic/claude-3.7-sonnet",
     ]
     for id in preferred {
       if models.contains(where: { $0.id == id }) {
@@ -472,7 +489,7 @@ final class ChatViewModel: ObservableObject {
     settings.presencePenalty = 0.0
     settings.reasoningEnabled = true
     settings.reasoningEffort = "high"
-    selectedModelID = "openai/o3"
+    selectedModelID = "anthropic/claude-opus-4.6"
   }
 }
 
