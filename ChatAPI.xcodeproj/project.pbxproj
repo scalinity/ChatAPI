@@ -24,6 +24,7 @@
 		A1B2C3D4E5F60718293A4B92 /* GrokVoiceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B8F /* GrokVoiceService.swift */; };
 		A1B2C3D4E5F60718293A4B93 /* GrokVoiceViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B90 /* GrokVoiceViewModel.swift */; };
 		A1B2C3D4E5F60718293A4B94 /* GrokVoiceAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B91 /* GrokVoiceAgentSheet.swift */; };
+		A1B2C3D4E5F60718293A4B96 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B95 /* AppTheme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +48,7 @@
 		A1B2C3D4E5F60718293A4B8F /* GrokVoiceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokVoiceService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B90 /* GrokVoiceViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokVoiceViewModel.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B91 /* GrokVoiceAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokVoiceAgentSheet.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B95 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,6 +88,7 @@
 				A1B2C3D4E5F60718293A4B7B /* Security */,
 				A1B2C3D4E5F60718293A4B7C /* Services */,
 				A1B2C3D4E5F60718293A4B7D /* ViewModels */,
+				A1B2C3D4E5F60718293A4B97 /* Theme */,
 				A1B2C3D4E5F60718293A4B7E /* Views */,
 				A1B2C3D4E5F60718293A4B7F /* Resources */,
 			);
@@ -148,6 +151,14 @@
 				A1B2C3D4E5F60718293A4B77 /* Assets.xcassets */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F60718293A4B97 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60718293A4B95 /* AppTheme.swift */,
+			);
+			path = Theme;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -231,6 +242,7 @@
 				A1B2C3D4E5F60718293A4B8A /* MessageBubbleView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B8B /* StarfieldBackgroundView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B94 /* GrokVoiceAgentSheet.swift in Sources */,
+				A1B2C3D4E5F60718293A4B96 /* AppTheme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
