@@ -38,3 +38,4 @@ Carthage/Build/
 # Cursor/VSCode
 .cursor/
 .vscode/
+.claude/
